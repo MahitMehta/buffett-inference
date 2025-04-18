@@ -6,10 +6,7 @@ from google.adk.agents.sequential_agent import SequentialAgent
 from google.adk.agents.parallel_agent import ParallelAgent
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.tools import google_search
-from google.adk.tools import function_tool
 from google.adk.runners import Runner
-from google.adk.tools import agent_tool
-from google.adk.tools.agent_tool import AgentTool
 import google.generativeai as genai
 from pydantic import BaseModel, Field
 
@@ -159,7 +156,7 @@ class BuffettInference:
         for event in events:
             if event.is_final_response():
                 final_response = event.content.parts[0].text
-        return final_response
+                return final_response
 
 # Example usage
 if __name__ == "__main__":
