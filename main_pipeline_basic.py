@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+import google.genai
+import google.adk
 import os
 from google.genai import types
 from google.adk.sessions import InMemorySessionService
@@ -6,7 +8,10 @@ from google.adk.agents.sequential_agent import SequentialAgent
 from google.adk.agents.parallel_agent import ParallelAgent
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.tools import google_search
+from google.adk.tools import function_tool
 from google.adk.runners import Runner
+from google.adk.tools import agent_tool
+from google.adk.tools.agent_tool import AgentTool
 import google.generativeai as genai
 from pydantic import BaseModel, Field
 
@@ -15,7 +20,6 @@ from pydantic import BaseModel, Field
 # from ..Tools.finBERT import sentiment_analyzer
 # from ..Tools.Mathematical_Models.Roberta import run_roberta
 
-# Post Data Class
 @dataclass
 class Post:
     handle: str
@@ -28,17 +32,34 @@ class BuffettInference:
     session_id: str
 
     runner: Runner
-    session: InMemorySessionService
+    session_service: InMemorySessionService
 
     def __init__(self):
         root_agent, APP_NAME, USER_ID, SESSION_ID = BuffettInference.initialize_pipeline()
-        session_service = InMemorySessionService()
+        
+        self.session_service = InMemorySessionService()
+        self.session_service.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID)
 
         self.user_id = USER_ID
         self.session_id = SESSION_ID
-        self.runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_service)
-    
+        self.runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=self.session_service)
 
+    def call_agent(self, post: Post):
+        query = self.format_query(post)
+
+        content = types.Content(role='user', parts=[types.Part(text=query)]) 
+        events = self.runner.run(
+            user_id=self.user_id,
+            session_id=self.session_id, 
+            new_message=content)
+
+        final_response = None
+        for event in events:
+            if event.is_final_response():
+                final_response = event.content.parts[0].text
+                
+        return final_response
+    
     @staticmethod
     def initialize_pipeline(low = "gemini-2.0-flash", mid = "gemini-2.0-flash", high = "gemini-2.0-flash"):
         """
@@ -46,11 +67,11 @@ class BuffettInference:
         """
         # Set up the environment variable for the API key
         os.environ["GOOGLE_API_KEY"] = "AIzaSyAZ6XYh6LNzp32BsRV0bKJxgfEz9ziucjk"
-
+    
         # Configure the Google Generative AI API
         genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-
-
+    
+    
         # --- Constants ---
         APP_NAME = "main_pipeline_app"
         USER_ID = "Adi2p30"
@@ -59,17 +80,17 @@ class BuffettInference:
         MID_GEMINI_MODEL = mid
         HIGH_GEMINI_MODEL = high
         # HIGH_GEMINI_MODEL = "gemini-2.5-pro-preview-03-25"
-
+    
         ## --- Initialize Tools ---
         # finBERT_tool = function_tool.FunctionTool(func=sentiment_analyzer.analyze_with_finbert)
-
-
+    
+    
         # Make sure to initialize ADK
         # google.adk.init(api_key=API_KEY)
-
-
+    
+    
         # --- Initialize Agents ---
-
+    
         # Trigger Handler Agent - Using only google_search tool
         trigger_handler_agent = LlmAgent(
             name="trigger_handler_agent",
@@ -77,7 +98,7 @@ class BuffettInference:
             model=HIGH_GEMINI_MODEL,
             tools=[google_search]
         )
-
+    
         # Researcher Agent [SEC] - Using only google_search tool
         sec_researcher_agent = LlmAgent(
             name="sec_researcher_agent",
@@ -85,7 +106,7 @@ class BuffettInference:
             model=MID_GEMINI_MODEL,
             tools=[google_search]
         )
-
+    
         # Researcher RecentNews Agent - Using only google_search tool
         recentnews_researcher_agent = LlmAgent(
             name="recentnews_researcher_agent",
@@ -93,13 +114,13 @@ class BuffettInference:
             model=MID_GEMINI_MODEL,
             tools=[google_search]
         )
-
+    
         # Main Researcher Agent
         main_researcher_agent = ParallelAgent(
             name="main_researcher_agent",
             sub_agents=[sec_researcher_agent, recentnews_researcher_agent],
         )
-
+    
         # Quantitative Analyst Agent - Removed nested agent tools
         quant_researcher_agent = LlmAgent(
             name="quant_researcher_agent",
@@ -130,7 +151,7 @@ class BuffettInference:
             model=HIGH_GEMINI_MODEL,
             tools=[google_search, ]  # Only using google_search tool, removing nested agent tools
         )
-
+    
         # --- Root Agent ---
         root_agent = SequentialAgent(
             name="main_pipeline_agent",
@@ -140,23 +161,6 @@ class BuffettInference:
 
     def format_query(self, post: Post):
         return f"{post.handle} - {post.content}"
-
-    def call_agent(self, post: Post):
-        """
-        Helper function to call the agent with a query.
-        """
-        query = self.format_query(post)
-
-        content = types.Content(role='user', parts=[types.Part(text=query)])
-        events = self.runner.run(
-            user_id=self.user_id,
-            session_id=self.session_id, 
-            new_message=content)
-
-        for event in events:
-            if event.is_final_response():
-                final_response = event.content.parts[0].text
-                return final_response
 
 # Example usage
 if __name__ == "__main__":
